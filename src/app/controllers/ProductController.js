@@ -1,7 +1,9 @@
+const { formatPrice } = require('../../lib/utils')
+
 const Category = require('../models/Category')
 const Product = require('../models/Product')
-const { formatPrice } = require('../../lib/utils')
-const { put } = require('../../routes')
+const File = require('../models/File')
+
 
 module.exports = {
     create(req, res) {
@@ -20,7 +22,6 @@ module.exports = {
 
     },
     async post(req, res) {
-        //lógica de salvar *async await
         const keys = Object.keys(req.body)
 
         for (key of keys) {
@@ -28,10 +29,18 @@ module.exports = {
                 return res.send('Please. fill all fields!')
             }
         }
+
+        if(req.files.length == 0)
+            return res.send('Please, send at least one image')
+        
+
         let results = await Product.create(req.body)
         const productId = results.rows[0].id
 
-        return res.redirect(`products/${productId}`)
+        const filesPromise = req.files.map(file => File.create({...file, product_id: productId}))
+        await Promise.all(filesPromise)
+
+        return res.redirect(`products/${productId}/edit`)
 
 
     }, 
@@ -47,12 +56,21 @@ module.exports = {
         product.price = formatPrice(product.price)
         product.old_price = formatPrice(product.old_price)
 
+        //get categorias
         results = await Category.all()
         const categories = results.rows
 
+        //get images
+        results = await Product.files(product.id)
+        let files = results.rows
+        files = files.map(file => ({
+            ...file, 
+            src: `${req.protocol}://${req.headers.host}${file.path.replace("public", "")}`
+        }))
 
 
-        return res.render("products/edit.njk", { product, categories })
+
+        return res.render("products/edit.njk", { product, categories, files })
     },
     async put(req, res) {
         const keys = Object.keys(req.body)
@@ -74,5 +92,10 @@ module.exports = {
         await Product.update(req.body)
 
         return res.redirect(`/products/${req.body.id}/edit`)
-    }
+    },
+    async delete(req, res) {
+        await Product.delete(req.body.id)
+
+        return res.redirect('/products/create')
+    },
 }
